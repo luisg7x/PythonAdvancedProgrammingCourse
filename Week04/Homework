@@ -1,0 +1,114 @@
+import mechanize
+import requests
+import re
+from Wappalyzer import Wappalyzer, WebPage
+from bs4 import BeautifulSoup
+import urllib.request
+from PIL import Image
+
+#Limpia los prints de un warning de Wappalyzer
+import warnings
+warnings.filterwarnings("ignore", message="""Caught 'unbalanced parenthesis at position 119' compiling regex""", category=UserWarning )
+
+#Obtengo el link utilizando requests
+request = requests.get('https://www.ebay.com/')
+
+print("-----------REQUEST-----------")
+print("URL: "+request.url)
+#Confirmo que su status está en 200 (accepted)
+print("Status: "+ str(request.status_code))
+print("")
+
+print("---------MECHANIZE-----------")
+#Instancia del Browser
+browser = mechanize.Browser()
+browser.set_handle_robots(False)
+browser.open(request.url)
+
+print("****PÁGINA PRINCIPAL****")
+print("Title of webpage: " + browser.title())
+print("URL: " + browser.geturl())
+print("")
+
+#Retrieve the current page's links.
+def refresh_mechanize_links():
+    #Set the browser to handle refreshes automatically
+    browser.set_handle_refresh(mechanize._http.HTTPRefreshProcessor(), max_time=1)
+    #Force a refresh by re-requesting the current page
+    browser.reload()
+    return list(browser.links())
+#Navigate to a link by its index.
+def navigate_mechanize_link(index):
+    try:
+        link = refresh_mechanize_links()[index]
+        browser.follow_link(link)
+    except IndexError:
+        print(f"No link found at index {index}.")
+
+#Browsing
+print("****Web page 1 (Log In)****")
+#Moving to Log in link
+navigate_mechanize_link(3)
+print("Title of webpage: " + browser.title())
+print("URL: " + browser.geturl())
+print("")
+
+print("****Web page 2 (Refurbished)****")
+#Previous Page
+browser.back()
+#Moving to refurbished link
+navigate_mechanize_link(33)
+print("Title of webpage: " + browser.title())
+print("URL: " + browser.geturl())
+print("")
+
+print("****Web page 3 (Laptops Refurbished)****")
+#Moving to the laptos refurbished link
+navigate_mechanize_link(40)
+print("Title of webpage: " + browser.title())
+print("URL: " + browser.geturl())
+print("")
+
+print("****Web page 4 (Main Page)****")
+#Moving to the laptos refurbished link
+navigate_mechanize_link(1)
+print("Title of webpage: " + browser.title())
+print("URL: " + browser.geturl())
+print("")
+
+
+print("-----------Wappalyzer-----------")
+#Instantiate Wappalyzer
+wappalyzer = Wappalyzer.latest()
+#Create a WebPage object from the URL
+webpage = WebPage.new_from_url(request.url)
+#Analyze the webpage with Wappalyzer
+analysis = wappalyzer.analyze_with_versions_and_categories(webpage)
+#Print all the technologies Wappalyzer found
+for number, (key, value) in enumerate(analysis.items(), start=1):
+    print(f"Tec: {number} {key}: ")
+    print(value)
+    print()
+
+print("-----------BeautifullSoup-----------")
+#Instantiate BeautifulSoup with 'lxml' parser
+soup = BeautifulSoup(request.content, "lxml")
+print("****Info from HTML to extract****\n")
+
+#Extract and print the title of the page
+title = soup.title.string if soup.title else 'No title found'
+print(f"Title:\n{title} Matches the one extracted from Mechanize\n")
+
+#Checking ebay logo
+ebay_logo_pattern = re.compile(r'https://ir\.ebaystatic\.com/rs/v/.*\.png')
+# Find the 'img' tag with the 'src' attribute matching the pattern
+ebay_logo = soup.find('img', {'src': ebay_logo_pattern})
+logo_url = ebay_logo['src'] if ebay_logo else None
+print(f'eBay logo URL: {logo_url}')
+
+
+
+
+
+
+
