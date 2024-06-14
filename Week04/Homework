@@ -97,7 +97,7 @@ print("****Info from HTML to extract****\n")
 
 #Extract and print the title of the page
 title = soup.title.string if soup.title else 'No title found'
-print(f"Title:\n{title} Matches the one extracted from Mechanize\n")
+print(f"Title:\n{title} Matches the ones extracted from Mechanize\n")
 
 #Checking ebay logo
 ebay_logo_pattern = re.compile(r'https://ir\.ebaystatic\.com/rs/v/.*\.png')
