@@ -18,8 +18,7 @@ website_url = "https://www.una.ac.cr/"
 email_To = "email@example.com"
 log_files = ["/var/log/auth.log", "/var/log/messages", "/var/log/audit/audit.log"]
 sniff_config = {
-    'display_filter': 'tcp port == 80',
-    'packet_count': 100,
+    'display_filter': 'tcp port == 80'
 }
 packets = pyshark.LiveCapture(interface='eth0', **sniff_config)
 
@@ -44,6 +43,14 @@ trusted_ips = [
 
 suspicious_ip_from_monitor_callback_and_network_log = []
 
+reports = {}
+
+def add_value_to_dict(my_dict, key, value):
+    if key in my_dict:
+        my_dict[key].append(value)
+    else:
+        my_dict[key] = [value]
+
 class Generate_alerts:
     #USED
     def send_email_alert(self, to, subject, message):
@@ -57,32 +64,42 @@ class Generate_alerts:
         server.sendmail(from_email, to, msg)
         server.quit()
     
+class PrintPDF(FPDF):
+    def header(self):
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 10, "Print Report", 0, 1, "C")
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Arial", "I", 8)
+        self.cell(0, 10, "Page %s" % self.page_no(), 0, 0, "C")
+
+    def add_print(self, text):
+        self.set_font("Arial", size=12)
+        self.multi_cell(0, 10, txt=text, align="L")
+
 class Generate_reports:
     def generate_report(self):
+        pdf = PrintPDF()
         now = datetime.datetime.now()
-        timestamp = now.strftime("%d_%m_%Y_%H")
-        
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size = 15)
-        
-        pdf.cell(200, 10, txt = f"Report generated on {timestamp}", ln = True, align = 'C')
-        
-        pdf.ln(10)
-        
-        for func in dir():
-            if not func.startswith('__'):
-                try:
-                    result = eval(func)()
-                except Exception as e:
-                    result = str(e)
-                    
-                pdf.cell(200, 10, txt = f"Function: {func}\nResult:\n{result}", ln = True, align = 'L')
-                
+        timestamp = now.strftime("%d_%m_%Y_%H_%M_%S")
+
+        current_key = None
+        for key, value_list in reports.items():
+            if key != current_key:
+                # Key has changed
+                current_key = key
+                pdf.add_page()
+
+            # Print all values associated with the current key
+            for value in value_list:
+                pdf.add_print(value)
+
         pdf.output("Report_" + timestamp + ".pdf")
 
+        print("PDF report generated successfully!")
+        
 class Network_monitor:
-
     #NO USED #192.168.1.1/21
     def scan_network(self, network):
         """
@@ -154,6 +171,7 @@ class Network_monitor:
 
     #USED #sniff(prn=nm.monitor_callback, filter="ip", store=0)           
     def monitor_callback(self, pkt):
+        key = "monitor_callback"
         generate_alerts = Generate_alerts()
         if pkt.haslayer(IP):
             for host in suspicious_ips:
@@ -161,10 +179,12 @@ class Network_monitor:
                     suspicious_ip_from_monitor_callback_and_network_log.append(host)
                     print("Suspicious trafic detected from: " + pkt[IP].src)
                     generate_alerts.send_email_alert(email_To, "Suspicious trafic detected", f"Suspicious trafic detected from: " + pkt[IP].src)
+                    add_value_to_dict(reports, key, "Suspicious trafic detected from: " + pkt[IP].src)
 
 class Logs_analysis:
     #USED #suspictious ips list
     def network_log_check(self):
+        key = "network_log_check"
         generate_alerts = Generate_alerts()
         # Capture network traffic using Tcpdump command
         command = "tcpdump -i eth0 -n -vv -s 0 -c 100"
@@ -184,16 +204,19 @@ class Logs_analysis:
                     if suspected_ip:
                         suspicious_ip_from_monitor_callback_and_network_log.append(suspected_ip)
                         generate_alerts.send_email_alert(email_To, "Potential SYN flood attack detected", f"Potential SYN flood attack detected from: " + suspected_ip)
+                        add_value_to_dict(reports, key, "Potential SYN flood attack detected from: " + suspected_ip)
                 
                 elif "ACK" not in line and "GET /index.php HTTP/1.1" in line:
                     print("Possible GET request without ACK flag!")
                     generate_alerts.send_email_alert(email_To, "Possible GET request without ACK flag!", f"Possible GET request without ACK flag!")
+                    add_value_to_dict(reports, key, "Possible GET request without ACK flag!")
 
         # Terminate the Tcpdump process
         process.kill()
     
     #USED
     def log_check(self, log_file_path):
+        key = "log_check"
         generate_alerts = Generate_alerts()
         # Load log files into a list
         with open(log_file_path, "r") as file:
@@ -208,35 +231,14 @@ class Logs_analysis:
             if login_pattern.match(log):
                 print("Suspicious login attempt detected!")
                 generate_alerts.send_email_alert(email_To, "Suspicious login attempt detected!", f"Suspicious login attempt detected in the machine, {log}")
+                add_value_to_dict(reports, key, "Suspicious login attempt detected!")
             
             elif access_pattern.match(log):
                 print("Unauthorized access to root directory detected!")
                 generate_alerts.send_email_alert(email_To, "Unauthorized access to root directory detected!", f"Unauthorized access to root directory detected in the machine, {log}" )
+                add_value_to_dict(reports, key, "Unauthorized access to root directory detected!")
 
-        # Parse timestamp format
-        #timestamp_format = "%a %b %d %H:%M:%S %Y"
-        #timestamp_regex = re.compile(r"\[(.*)\]")
-        #for log in logs:
-            #match = timestamp_regex.search(log)
-            #if match:
-                #timestamp = datetime.strptime(match.group(1), timestamp_format)
-    
-class Vulnerabilities_detection:
-    #USED #https://www.una.ac.cr/
-    def web_check(self, website):
-        request = requests.get(website)
-        #Instantiate Wappalyzer
-        wappalyzer = Wappalyzer.latest()
-        #Create a WebPage object from the URL
-        webpage = WebPage.new_from_url(request.url)
-        #Analyze the webpage with Wappalyzer
-        analysis = wappalyzer.analyze_with_versions_and_categories(webpage)
-        #Print all the technologies Wappalyzer found
-        for number, (key, value) in enumerate(analysis.items(), start=1):
-            print(f"Tecnology: {number} {key}: ")
-            print(value)
-            print()
-    
+class Vulnerabilities_detection:    
     #NO USED
     def linux_behaviour_check(self):
         # Create an instance of the INotify class
@@ -267,6 +269,7 @@ class Vulnerabilities_detection:
 
     #USED #path "/home/user/.ssh/config"
     def linux_analyze_ssh_config(self, file_path):
+            key = "linux_analyze_ssh_config"
             with open(file_path, "r") as file:
                 lines = file.readlines()
 
@@ -291,19 +294,23 @@ class Vulnerabilities_detection:
             print("Weak passwords found:")
             for password in weak_passwords:
                 print(password, end="")
+                add_value_to_dict(reports, key, f"Weak passwords found: {password}")
 
             print("\nInsecure ciphers found:")
             for cipher in insecure_ciphers:
                 print(cipher, end="")
+                add_value_to_dict(reports, key, f"Insecure ciphers found: {cipher}")
 
     #USED #192.168.50.1 
     def scan_host(self, host):
+        key = "scan_host"
         # Send TCP SYN packets to port 80 (HTTP)
         tcp_packet = IP(dst=host)/TCP(dport=80, flags="S")
         response = sr1(tcp_packet, timeout=1, verbose=0)
 
         if response:
             print(f"{host} is vulnerable to TCP SYN flooding")
+            add_value_to_dict(reports, key, f"{host} is vulnerable to TCP SYN flooding")
 
         # Send UDP packets to port 53 (DNS)
         udp_packet = IP(dst=host)/UDP(dport=53)
@@ -311,6 +318,7 @@ class Vulnerabilities_detection:
 
         if response:
             print(f"{host} is vulnerable to UDP flood attacks")
+            add_value_to_dict(reports, key, f"{host} is vulnerable to UDP flood attacks")
 
         # Send ICMP echo request
         icmp_packet = IP(dst=host)/ICMP()
@@ -318,11 +326,14 @@ class Vulnerabilities_detection:
 
         if not response:
             print(f"{host} dropped the ICMP echo request")
+            add_value_to_dict(reports, key, f"{host} dropped the ICMP echo request")
 
 class Attack_prevention:
     #USED #block suspicious ip: 192.168.50.1
     def block_ip(self, ip_address):
+        key = "block_ip"
         os.system("sudo iptables -A INPUT -s {} -j DROP".format(ip_address))
+        add_value_to_dict(reports, key, f"{ip_address} has been blocked")
 
     #sniff(prn=ap.filter_packet, filter="tcp")
     #def filter_packet(pkt):
@@ -331,6 +342,7 @@ class Attack_prevention:
 
     #USED sniff(prn=ap.filter_packet, filter="tcp")
     def filter_packet(self, pkt):
+        key = "filter_packet"
         generate_alerts = Generate_alerts()
         guilty_ips = []
         if pkt.haslayer(TCP) and pkt.getlayer(TCP).dport == 80:
@@ -343,21 +355,25 @@ class Attack_prevention:
                 guilty_ips.append(src_ip)
                 print(f"High volume requests from {src_ip}")
                 generate_alerts.send_email_alert(email_To, "High volume requests detected", f"High volume requests from {src_ip}")
+                add_value_to_dict(reports, key, f"High volume requests from {src_ip}")
                 
             # Check for requests coming from unexpected or unfamiliar sources
             elif src_ip not in trusted_ips and dport == 80:
                 guilty_ips.append(src_ip)
                 print(f"Request from unknown source: {src_ip}")
                 generate_alerts.send_email_alert(email_To, "Request from unknown source", f"Request from unknown source from {src_ip}")
+                add_value_to_dict(reports, key, f"Request from unknown source from {src_ip}")
                 
             # Check for malformed or unusual HTTP requests
             if "Host:" not in pkt.sprintf("%IP.host%") and dport == 80:
                 print("Malformed request")
                 generate_alerts.send_email_alert(email_To, "Malformed request", f"Malformed request")
+                add_value_to_dict(reports, key, f"Malformed request")
             
             elif len(pkt.getlayer(TCP).payload) < 100 and dport == 80:
                 print("Short payload request")
-                generate_alerts.send_email_alert(email_To, "Short payload reques", f"Short payload reques")
+                generate_alerts.send_email_alert(email_To, "Short payload reques", f"Short payload request")
+                add_value_to_dict(reports, key, f"Short payload request")
                 
             else:
                 print(f"{src_ip}: {dst_ip}:{dport}")
@@ -367,6 +383,7 @@ class Attack_prevention:
 class Traffic_anaysis:
     #USED #https://www.una.ac.cr/
     def web_traffic_sqli_analisys(self, url):
+        key = "web_traffic_sqli_analisys"
         generate_alerts = Generate_alerts()
         # Sniff packets and analyze them
         for packet in packets.sniff_continuously():
@@ -380,6 +397,8 @@ class Traffic_anaysis:
                         if pattern.upper() in http_data['data']:
                             print(f"Potential SQL injection attempt detected: {http_data['request']}")
                             generate_alerts.send_email_alert(email_To, "Potential SQL injection attempt detected", f"Potential SQL injection attempt detected: {http_data['request']}")
+                            add_value_to_dict(reports, key, f"Potential SQL injection attempt detected: {http_data['request']}")
+
 
                     # Check for XSS attack patterns
                     xss_patterns = ['<script>', '</script>', 'javascript:', 'onload=', 'onerror=']
@@ -387,35 +406,26 @@ class Traffic_anaysis:
                         if pattern in http_data['data']:
                             print(f"Potential XSS attack detected: {http_data['request']}")
                             generate_alerts.send_email_alert(email_To, "Potential XSS attack detected", f"Potential XSS attack detected: {http_data['request']}")
+                            add_value_to_dict(reports, key, f"Potential XSS attack detected: {http_data['request']}")
             
 class Get_recommendations:
-    #!!!! USED #https://www.una.ac.cr/
-    def get_recommended_tools(self, url):
-        wappalyzer_api_url = "https://api.wappalyzer.com/v1/"
-        params = {
-            'url': url,
-            'license': 'free',
-            'limit': 10
-        }
+    #USED #https://www.una.ac.cr/
+    def web_check_tools(self, url):
+        key = "web_check"
+        request = requests.get(url)
+        #Instantiate Wappalyzer
+        wappalyzer = Wappalyzer.latest()
+        #Create a WebPage object from the URL
+        webpage = WebPage.new_from_url(request.url)
+        #Analyze the webpage with Wappalyzer
+        analysis = wappalyzer.analyze_with_versions_and_categories(webpage)
+        #Print all the technologies Wappalyzer found
+        for number, (key, value) in enumerate(analysis.items(), start=1):
+            add_value_to_dict(reports, key, f"Tecnology: {number} {key}: {value}")
+            print(f"Tecnology: {number} {key}: ")
+            print(value)
+            print()
         
-        response = requests.get(wappalyzer_api_url, params=params)
-        data = response.json()
-        
-        recommended_tools = []
-        for item in data['tools']:
-            name = item['name']
-            description = item['description']
-            icon = item['icon']
-            
-            # Add tool to recommendations list
-            recommended_tools.append({
-                'name': name,
-                'description': description,
-                'icon': icon
-            })
-        
-        return recommended_tools
-
 def main():
     # Create instances of the relevant classes
     network_monitor = Network_monitor()
@@ -466,19 +476,13 @@ def main():
         logs_analysis.analyze_log(log_file)
 
     # Analyze Linux SSH configuration for vulnerabilities 
-    Vulnerabilities_detection.linux_analyze_ssh_config(config_file)
-    # Perform web checks vulnerabilities on a specified website URL
-    Vulnerabilities_detection.web_check(website_url)
+    vuln_detection.linux_analyze_ssh_config(config_file)
 
     # Analyze web traffic for SQL injection attacks on the website URL
     traffic_analysis.web_traffic_sqli_analisys(website_url)
     
-    # Get recommendations for security tools based on the website URL
-    recommendations = get_recommendations.get_recommended_tools(website_url)
-    for recommendation in recommendations:
-        print(f"Tool: {recommendation['name']}")
-        print(f"Description: {recommendation['description']}")
-        print(f"Icon: {recommendation['icon']}")    
+    # Perform web checks vulnerabilities of the tool on a specified website URL
+    get_recommendations.web_check_tools(website_url) 
 
     # Generate a report of the security scan results
     generate_reports.generate_report()
