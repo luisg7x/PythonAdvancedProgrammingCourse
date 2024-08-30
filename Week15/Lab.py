@@ -20,7 +20,11 @@ log_files = ["/var/log/auth.log", "/var/log/messages", "/var/log/audit/audit.log
 sniff_config = {
     'display_filter': 'tcp port == 80'
 }
-packets = pyshark.LiveCapture(interface='eth0', **sniff_config)
+try:
+    packets = pyshark.LiveCapture(interface='eth0', **sniff_config)
+except Exception as e:
+    print(f"Error during execution, pyshark.LiveCapture: {str(e)}")
+
 
 suspicious_ips = [
     "192.168.1.100",
@@ -54,16 +58,23 @@ def add_value_to_dict(my_dict, key, value):
 class Generate_alerts:
     #USED
     def send_email_alert(self, to, subject, message):
-        from_email = "your_email@example.com"
-        password = "your_passwond"
-        server = smtplib.SMTP('smtp.example.com', 587)
-        server.starttls()
-        server.login(from_email, password)
+        try:
+            from_email = "your_email@example.com"
+            password = "your_passwond"
+            server = smtplib.SMTP('smtp.example.com', 587)
+            server.starttls()
+            server.login(from_email, password)
 
-        msg = f"Subject: {subject}\n\n{message}"
-        server.sendmail(from_email, to, msg)
-        server.quit()
-    
+            msg = f"Subject: {subject}\n\n{message}"
+            server.sendmail(from_email, to, msg)
+            server.quit()
+
+            print("Email sent successfully!")
+        except Exception as e:
+            print(f"Error sending email: {str(e)}")
+            # You can log the error or take other appropriate actions here
+
+#USED    
 class PrintPDF(FPDF):
     def header(self):
         self.set_font("Arial", "B", 12)
@@ -79,26 +90,30 @@ class PrintPDF(FPDF):
         self.multi_cell(0, 10, txt=text, align="L")
 
 class Generate_reports:
+    #USED
     def generate_report(self):
-        pdf = PrintPDF()
-        now = datetime.datetime.now()
-        timestamp = now.strftime("%d_%m_%Y_%H_%M_%S")
+        try:
+            pdf = PrintPDF()
+            now = datetime.datetime.now()
+            timestamp = now.strftime("%d_%m_%Y_%H_%M_%S")
 
-        current_key = None
-        for key, value_list in reports.items():
-            if key != current_key:
-                # Key has changed
-                current_key = key
-                pdf.add_page()
+            current_key = None
+            for key, value_list in reports.items():
+                if key != current_key:
+                    # Key has changed
+                    current_key = key
+                    pdf.add_page()
 
-            # Print all values associated with the current key
-            for value in value_list:
-                pdf.add_print(value)
+                # Print all values associated with the current key
+                for value in value_list:
+                    pdf.add_print(value)
 
-        pdf.output("Report_" + timestamp + ".pdf")
+            pdf.output("Report_" + timestamp + ".pdf")
 
-        print("PDF report generated successfully!")
-        
+            print("PDF report generated successfully!")
+        except Exception as e:
+            print(f"Error generating PDF report: {str(e)}")
+
 class Network_monitor:
     #NO USED #192.168.1.1/21
     def scan_network(self, network):
@@ -145,286 +160,326 @@ class Network_monitor:
     #USED #192.168.1
     def ping_sweep(self, target_subnet) :
         live_hosts = []
-        for host in range(1, 255):
-            target_ip = target_subnet + "." + str(host)
-            packet = IP(dst=target_ip)/ICMP()
-            response = sr1(packet, timeout=1, verbose=0)
-            if response is not None:
-                print(f" {target_ip} está vivo.")
-                live_hosts.append(target_ip)
-            else:
-                print(f" {target_ip} está muerto o no responde a pings.")
-        return live_hosts
+        try:
+            for host in range(1, 255):
+                target_ip = target_subnet + "." + str(host)
+                packet = IP(dst=target_ip)/ICMP()
+                response = sr1(packet, timeout=1, verbose=0)
+                if response is not None:
+                    print(f" {target_ip} está vivo.")
+                    live_hosts.append(target_ip)
+                else:
+                    print(f" {target_ip} está muerto o no responde a pings.")
+            return live_hosts
+        except Exception as e:
+            print(f"Error executing ping_sweep: {str(e)}")
         #print(f"\nHosts vivos en la subred {target_subnet} :") 
         #for host in live_hosts:
             #print(host)
 
     #USED #("192.168.50.1", range(1,1024)
     def port_scan(self, host, port_range):
-        for dst_port in port_range:
-            src_port = RandShort()
-            packet = IP(dst=host)/TCP(sport=src_port, dport=dst_port, flags="S")
-            response = sr1(packet, timeout=2, verbose=0)
-            if response is not None:
-                if response[TCP].flags == "SA":
-                    print("Port " + str(dst_port) + " is open")
+        try:
+            for dst_port in port_range:
+                src_port = RandShort()
+                packet = IP(dst=host)/TCP(sport=src_port, dport=dst_port, flags="S")
+                response = sr1(packet, timeout=2, verbose=0)
+                if response is not None:
+                    if response[TCP].flags == "SA":
+                        print("Port " + str(dst_port) + " is open")
+        except Exception as e:
+            print(f"Error during port scan: {str(e)}")
+        # You can log the error or take other appropriate actions here
 
     #USED #sniff(prn=nm.monitor_callback, filter="ip", store=0)           
     def monitor_callback(self, pkt):
         key = "monitor_callback"
         generate_alerts = Generate_alerts()
-        if pkt.haslayer(IP):
-            for host in suspicious_ips:
-                if pkt[IP].src == host:
-                    suspicious_ip_from_monitor_callback_and_network_log.append(host)
-                    print("Suspicious trafic detected from: " + pkt[IP].src)
-                    generate_alerts.send_email_alert(email_To, "Suspicious trafic detected", f"Suspicious trafic detected from: " + pkt[IP].src)
-                    add_value_to_dict(reports, key, "Suspicious trafic detected from: " + pkt[IP].src)
+        try:
+            if pkt.haslayer(IP):
+                for host in suspicious_ips:
+                    if pkt[IP].src == host:
+                        suspicious_ip_from_monitor_callback_and_network_log.append(host)
+                        print("Suspicious trafic detected from: " + pkt[IP].src)
+                        generate_alerts.send_email_alert(email_To, "Suspicious trafic detected", f"Suspicious trafic detected from: " + pkt[IP].src)
+                        add_value_to_dict(reports, key, "Suspicious trafic detected from: " + pkt[IP].src)
+        except Exception as e:
+            print(f"Error executing monitor_callback: {str(e)}")
 
 class Logs_analysis:
     #USED #suspictious ips list
     def network_log_check(self):
         key = "network_log_check"
         generate_alerts = Generate_alerts()
-        # Capture network traffic using Tcpdump command
-        command = "tcpdump -i eth0 -n -vv -s 0 -c 100"
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+        try:
+            # Capture network traffic using Tcpdump command
+            command = "tcpdump -i eth0 -n -vv -s 0 -c 100"
+            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
 
-        while True:
-            output = process.stdout.read()
-            
-            # Parse the captured packets
-            for line in output.decode().splitlines():
-                # Check for specific patterns or conditions in each packet
-                if "SYN" in line and any(ip in line for ip in suspicious_ips):
-                    print("Potential SYN flood attack detected!")
-
-                    # Add the IP to the guilty_ips list
-                    suspected_ip = next((ip for ip in suspicious_ips if ip in line), None)
-                    if suspected_ip:
-                        suspicious_ip_from_monitor_callback_and_network_log.append(suspected_ip)
-                        generate_alerts.send_email_alert(email_To, "Potential SYN flood attack detected", f"Potential SYN flood attack detected from: " + suspected_ip)
-                        add_value_to_dict(reports, key, "Potential SYN flood attack detected from: " + suspected_ip)
+            while True:
+                output = process.stdout.read()
                 
-                elif "ACK" not in line and "GET /index.php HTTP/1.1" in line:
-                    print("Possible GET request without ACK flag!")
-                    generate_alerts.send_email_alert(email_To, "Possible GET request without ACK flag!", f"Possible GET request without ACK flag!")
-                    add_value_to_dict(reports, key, "Possible GET request without ACK flag!")
+                # Parse the captured packets
+                for line in output.decode().splitlines():
+                    # Check for specific patterns or conditions in each packet
+                    if "SYN" in line and any(ip in line for ip in suspicious_ips):
+                        print("Potential SYN flood attack detected!")
 
-        # Terminate the Tcpdump process
-        process.kill()
+                        # Add the IP to the guilty_ips list
+                        suspected_ip = next((ip for ip in suspicious_ips if ip in line), None)
+                        if suspected_ip:
+                            suspicious_ip_from_monitor_callback_and_network_log.append(suspected_ip)
+                            generate_alerts.send_email_alert(email_To, "Potential SYN flood attack detected", f"Potential SYN flood attack detected from: " + suspected_ip)
+                            add_value_to_dict(reports, key, "Potential SYN flood attack detected from: " + suspected_ip)
+                    
+                    elif "ACK" not in line and "GET /index.php HTTP/1.1" in line:
+                        print("Possible GET request without ACK flag!")
+                        generate_alerts.send_email_alert(email_To, "Possible GET request without ACK flag!", f"Possible GET request without ACK flag!")
+                        add_value_to_dict(reports, key, "Possible GET request without ACK flag!")
+
+            # Terminate the Tcpdump process
+            process.kill()
+        except Exception as e:
+            print(f"Error executing network_log_check: {str(e)}")
     
     #USED
     def log_check(self, log_file_path):
         key = "log_check"
         generate_alerts = Generate_alerts()
-        # Load log files into a list
-        with open(log_file_path, "r") as file:
-            logs = file.readlines()
+        try:
+            # Load log files into a list
+            with open(log_file_path, "r") as file:
+                logs = file.readlines()
 
-        # Define patterns to match suspicious activity
-        login_pattern = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - - \[.*\] \"GET /login HTTP/1.1\"")
-        access_pattern = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - - \[.*\] \"GET \/root HTTP\/1.1\"")
+            # Define patterns to match suspicious activity
+            login_pattern = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - - \[.*\] \"GET /login HTTP/1.1\"")
+            access_pattern = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3} - - \[.*\] \"GET \/root HTTP\/1.1\"")
 
-        # Iterate over logs and check for matches
-        for log in logs:
-            if login_pattern.match(log):
-                print("Suspicious login attempt detected!")
-                generate_alerts.send_email_alert(email_To, "Suspicious login attempt detected!", f"Suspicious login attempt detected in the machine, {log}")
-                add_value_to_dict(reports, key, "Suspicious login attempt detected!")
-            
-            elif access_pattern.match(log):
-                print("Unauthorized access to root directory detected!")
-                generate_alerts.send_email_alert(email_To, "Unauthorized access to root directory detected!", f"Unauthorized access to root directory detected in the machine, {log}" )
-                add_value_to_dict(reports, key, "Unauthorized access to root directory detected!")
+            # Iterate over logs and check for matches
+            for log in logs:
+                if login_pattern.match(log):
+                    print("Suspicious login attempt detected!")
+                    generate_alerts.send_email_alert(email_To, "Suspicious login attempt detected!", f"Suspicious login attempt detected in the machine, {log}")
+                    add_value_to_dict(reports, key, "Suspicious login attempt detected!")
+                
+                elif access_pattern.match(log):
+                    print("Unauthorized access to root directory detected!")
+                    generate_alerts.send_email_alert(email_To, "Unauthorized access to root directory detected!", f"Unauthorized access to root directory detected in the machine, {log}" )
+                    add_value_to_dict(reports, key, "Unauthorized access to root directory detected!")
+        except Exception as e:
+            print(f"Error executing log_check: {str(e)}")
 
 class Vulnerabilities_detection:    
     #NO USED
     def linux_behaviour_check(self):
-        # Create an instance of the INotify class
-        notifier = INotify()
+        try:
+            # Create an instance of the INotify class
+            notifier = INotify()
 
-        # Watch for modifications to a specific directory
-        mask = flags.CLOSE_WRITE | flags.MODIFY
-        directory = "/path/to/watch"
+            # Watch for modifications to a specific directory
+            mask = flags.CLOSE_WRITE | flags.MODIFY
+            directory = "/path/to/watch"
 
-        # Add watch event
-        watch_event = notifier.add_watch(directory, mask)
+            # Add watch event
+            watch_event = notifier.add_watch(directory, mask)
 
-        while True:
-            events = notifier.read_events()
-            
-            # Process the file events
-            for event in events:
-                path = event.pathname
+            while True:
+                events = notifier.read_events()
                 
-                # Check if a file was modified or created
-                if flags.MODIFY in event.mask:
-                    print(f"File {path} has been modified!")
-                
-                elif flags.CLOSE_WRITE in event.mask:
-                    print(f"File {path} has been closed and written to!")
+                # Process the file events
+                for event in events:
+                    path = event.pathname
+                    
+                    # Check if a file was modified or created
+                    if flags.MODIFY in event.mask:
+                        print(f"File {path} has been modified!")
+                    
+                    elif flags.CLOSE_WRITE in event.mask:
+                        print(f"File {path} has been closed and written to!")
 
-            time.sleep(1)
+                time.sleep(1)
+
+        except Exception as e:
+            print(f"Error executing linux_behaviour_check: {str(e)}")
 
     #USED #path "/home/user/.ssh/config"
     def linux_analyze_ssh_config(self, file_path):
             key = "linux_analyze_ssh_config"
-            with open(file_path, "r") as file:
-                lines = file.readlines()
+            try:
+                with open(file_path, "r") as file:
+                    lines = file.readlines()
 
-            weak_passwords = []
-            insecure_ciphers = []
+                weak_passwords = []
+                insecure_ciphers = []
 
-            for line in lines:
-                if "#" not in line:
-                    key_value_pair = line.strip().split(" ")
+                for line in lines:
+                    if "#" not in line:
+                        key_value_pair = line.strip().split(" ")
 
-                    if len(key_value_pair) == 2:
-                        key, value = key_value_pair
+                        if len(key_value_pair) == 2:
+                            key, value = key_value_pair
 
-                        if key.lower() == "passwordauthentication":
-                            if value.lower() == "yes":
-                                weak_passwords.append(line)
+                            if key.lower() == "passwordauthentication":
+                                if value.lower() == "yes":
+                                    weak_passwords.append(line)
 
-                        elif key.lower() == "cipher":
-                            if "3des" in value.lower():
-                                insecure_ciphers.append(line)
+                            elif key.lower() == "cipher":
+                                if "3des" in value.lower():
+                                    insecure_ciphers.append(line)
 
-            print("Weak passwords found:")
-            for password in weak_passwords:
-                print(password, end="")
-                add_value_to_dict(reports, key, f"Weak passwords found: {password}")
+                print("Weak passwords found:")
+                for password in weak_passwords:
+                    print(password, end="")
+                    add_value_to_dict(reports, key, f"Weak passwords found: {password}")
 
-            print("\nInsecure ciphers found:")
-            for cipher in insecure_ciphers:
-                print(cipher, end="")
-                add_value_to_dict(reports, key, f"Insecure ciphers found: {cipher}")
+                print("\nInsecure ciphers found:")
+                for cipher in insecure_ciphers:
+                    print(cipher, end="")
+                    add_value_to_dict(reports, key, f"Insecure ciphers found: {cipher}")
+
+            except Exception as e:
+                print(f"Error executing linux_analyze_ssh_config: {str(e)}")
 
     #USED #192.168.50.1 
     def scan_host(self, host):
         key = "scan_host"
-        # Send TCP SYN packets to port 80 (HTTP)
-        tcp_packet = IP(dst=host)/TCP(dport=80, flags="S")
-        response = sr1(tcp_packet, timeout=1, verbose=0)
+        try:
+            # Send TCP SYN packets to port 80 (HTTP)
+            tcp_packet = IP(dst=host)/TCP(dport=80, flags="S")
+            response = sr1(tcp_packet, timeout=1, verbose=0)
 
-        if response:
-            print(f"{host} is vulnerable to TCP SYN flooding")
-            add_value_to_dict(reports, key, f"{host} is vulnerable to TCP SYN flooding")
+            if response:
+                print(f"{host} is vulnerable to TCP SYN flooding")
+                add_value_to_dict(reports, key, f"{host} is vulnerable to TCP SYN flooding")
 
-        # Send UDP packets to port 53 (DNS)
-        udp_packet = IP(dst=host)/UDP(dport=53)
-        response = sr1(udp_packet, timeout=1, verbose=0)
+            # Send UDP packets to port 53 (DNS)
+            udp_packet = IP(dst=host)/UDP(dport=53)
+            response = sr1(udp_packet, timeout=1, verbose=0)
 
-        if response:
-            print(f"{host} is vulnerable to UDP flood attacks")
-            add_value_to_dict(reports, key, f"{host} is vulnerable to UDP flood attacks")
+            if response:
+                print(f"{host} is vulnerable to UDP flood attacks")
+                add_value_to_dict(reports, key, f"{host} is vulnerable to UDP flood attacks")
 
-        # Send ICMP echo request
-        icmp_packet = IP(dst=host)/ICMP()
-        response = sr1(icmp_packet, timeout=1, verbose=0)
+            # Send ICMP echo request
+            icmp_packet = IP(dst=host)/ICMP()
+            response = sr1(icmp_packet, timeout=1, verbose=0)
 
-        if not response:
-            print(f"{host} dropped the ICMP echo request")
-            add_value_to_dict(reports, key, f"{host} dropped the ICMP echo request")
+            if not response:
+                print(f"{host} dropped the ICMP echo request")
+                add_value_to_dict(reports, key, f"{host} dropped the ICMP echo request")
+        except Exception as e:
+                print(f"Error executing scan_host: {str(e)}")
 
 class Attack_prevention:
     #USED #block suspicious ip: 192.168.50.1
     def block_ip(self, ip_address):
-        key = "block_ip"
-        os.system("sudo iptables -A INPUT -s {} -j DROP".format(ip_address))
-        add_value_to_dict(reports, key, f"{ip_address} has been blocked")
+        try:
+            key = "block_ip"
+            os.system("sudo iptables -A INPUT -s {} -j DROP".format(ip_address))
+            add_value_to_dict(reports, key, f"{ip_address} has been blocked")
+        except Exception as e:
+                print(f"Error executing block_ip: {str(e)}")
 
-    #sniff(prn=ap.filter_packet, filter="tcp")
-    #def filter_packet(pkt):
-        #if pkt.haslayer(TCP) and pkt.getlayer(TCP).dport == 80:
-            #print("\n{}: {}:{}".format(pkt.getlayer(IP).src, pkt.getlayer(IP).dst, pkt.getlayer(TCP).dport))
+    #NO USED #sniff(prn=ap.filter_packet, filter="tcp")
+    def filter_packet_version_1(pkt):      
+        #pkt.haslayer(TCP) and pkt.getlayer(TCP).dport == 80:
+           #print("\n{}: {}:{}".format(pkt.getlayer(IP).src, pkt.getlayer(IP).dst, pkt.getlayer(TCP).dport))
+           print("filter_packet_version_1 is not being used")
 
     #USED sniff(prn=ap.filter_packet, filter="tcp")
     def filter_packet(self, pkt):
         key = "filter_packet"
         generate_alerts = Generate_alerts()
         guilty_ips = []
-        if pkt.haslayer(TCP) and pkt.getlayer(TCP).dport == 80:
-            src_ip = pkt.getlayer(IP).src
-            dst_ip = pkt.getlayer(IP).dst
-            dport = pkt.getlayer(TCP).dport
-            
-            # Check for a single IP address making a high volume of requests
-            if src_ip in suspicious_ips and dport == 80:
-                guilty_ips.append(src_ip)
-                print(f"High volume requests from {src_ip}")
-                generate_alerts.send_email_alert(email_To, "High volume requests detected", f"High volume requests from {src_ip}")
-                add_value_to_dict(reports, key, f"High volume requests from {src_ip}")
+        try:
+            if pkt.haslayer(TCP) and pkt.getlayer(TCP).dport == 80:
+                src_ip = pkt.getlayer(IP).src
+                dst_ip = pkt.getlayer(IP).dst
+                dport = pkt.getlayer(TCP).dport
                 
-            # Check for requests coming from unexpected or unfamiliar sources
-            elif src_ip not in trusted_ips and dport == 80:
-                guilty_ips.append(src_ip)
-                print(f"Request from unknown source: {src_ip}")
-                generate_alerts.send_email_alert(email_To, "Request from unknown source", f"Request from unknown source from {src_ip}")
-                add_value_to_dict(reports, key, f"Request from unknown source from {src_ip}")
+                # Check for a single IP address making a high volume of requests
+                if src_ip in suspicious_ips and dport == 80:
+                    guilty_ips.append(src_ip)
+                    print(f"High volume requests from {src_ip}")
+                    generate_alerts.send_email_alert(email_To, "High volume requests detected", f"High volume requests from {src_ip}")
+                    add_value_to_dict(reports, key, f"High volume requests from {src_ip}")
+                    
+                # Check for requests coming from unexpected or unfamiliar sources
+                elif src_ip not in trusted_ips and dport == 80:
+                    guilty_ips.append(src_ip)
+                    print(f"Request from unknown source: {src_ip}")
+                    generate_alerts.send_email_alert(email_To, "Request from unknown source", f"Request from unknown source from {src_ip}")
+                    add_value_to_dict(reports, key, f"Request from unknown source from {src_ip}")
+                    
+                # Check for malformed or unusual HTTP requests
+                if "Host:" not in pkt.sprintf("%IP.host%") and dport == 80:
+                    print("Malformed request")
+                    generate_alerts.send_email_alert(email_To, "Malformed request", f"Malformed request")
+                    add_value_to_dict(reports, key, f"Malformed request")
                 
-            # Check for malformed or unusual HTTP requests
-            if "Host:" not in pkt.sprintf("%IP.host%") and dport == 80:
-                print("Malformed request")
-                generate_alerts.send_email_alert(email_To, "Malformed request", f"Malformed request")
-                add_value_to_dict(reports, key, f"Malformed request")
-            
-            elif len(pkt.getlayer(TCP).payload) < 100 and dport == 80:
-                print("Short payload request")
-                generate_alerts.send_email_alert(email_To, "Short payload reques", f"Short payload request")
-                add_value_to_dict(reports, key, f"Short payload request")
+                elif len(pkt.getlayer(TCP).payload) < 100 and dport == 80:
+                    print("Short payload request")
+                    generate_alerts.send_email_alert(email_To, "Short payload reques", f"Short payload request")
+                    add_value_to_dict(reports, key, f"Short payload request")
+                    
+                else:
+                    print(f"{src_ip}: {dst_ip}:{dport}")
                 
-            else:
-                print(f"{src_ip}: {dst_ip}:{dport}")
-            
-            return guilty_ips
+                return guilty_ips
+        except Exception as e:
+            print(f"Error executing filter_packet: {str(e)}")
 
 class Traffic_anaysis:
     #USED #https://www.una.ac.cr/
     def web_traffic_sqli_analisys(self, url):
         key = "web_traffic_sqli_analisys"
         generate_alerts = Generate_alerts()
-        # Sniff packets and analyze them
-        for packet in packets.sniff_continuously():
-            if 'Host' in packet and url in packet['Host']:
-                http_data = packet.get('http')
+        try:
+            # Sniff packets and analyze them
+            for packet in packets.sniff_continuously():
+                if 'Host' in packet and url in packet['Host']:
+                    http_data = packet.get('http')
 
-                if http_data:
-                    # Check for SQL injection patterns
-                    sql_injection_patterns = ['UNION', 'SELECT', 'FROM', 'WHERE', 'LIMIT', "admin' --", "admin' /*", "admin'or '1'='1", "admin' or '1'='1' --", "admin' or'1'='1' /*"]
-                    for pattern in sql_injection_patterns:
-                        if pattern.upper() in http_data['data']:
-                            print(f"Potential SQL injection attempt detected: {http_data['request']}")
-                            generate_alerts.send_email_alert(email_To, "Potential SQL injection attempt detected", f"Potential SQL injection attempt detected: {http_data['request']}")
-                            add_value_to_dict(reports, key, f"Potential SQL injection attempt detected: {http_data['request']}")
+                    if http_data:
+                        # Check for SQL injection patterns
+                        sql_injection_patterns = ['UNION', 'SELECT', 'FROM', 'WHERE', 'LIMIT', "admin' --", "admin' /*", "admin'or '1'='1", "admin' or '1'='1' --", "admin' or'1'='1' /*"]
+                        for pattern in sql_injection_patterns:
+                            if pattern.upper() in http_data['data']:
+                                print(f"Potential SQL injection attempt detected: {http_data['request']}")
+                                generate_alerts.send_email_alert(email_To, "Potential SQL injection attempt detected", f"Potential SQL injection attempt detected: {http_data['request']}")
+                                add_value_to_dict(reports, key, f"Potential SQL injection attempt detected: {http_data['request']}")
 
 
-                    # Check for XSS attack patterns
-                    xss_patterns = ['<script>', '</script>', 'javascript:', 'onload=', 'onerror=']
-                    for pattern in xss_patterns:
-                        if pattern in http_data['data']:
-                            print(f"Potential XSS attack detected: {http_data['request']}")
-                            generate_alerts.send_email_alert(email_To, "Potential XSS attack detected", f"Potential XSS attack detected: {http_data['request']}")
-                            add_value_to_dict(reports, key, f"Potential XSS attack detected: {http_data['request']}")
+                        # Check for XSS attack patterns
+                        xss_patterns = ['<script>', '</script>', 'javascript:', 'onload=', 'onerror=']
+                        for pattern in xss_patterns:
+                            if pattern in http_data['data']:
+                                print(f"Potential XSS attack detected: {http_data['request']}")
+                                generate_alerts.send_email_alert(email_To, "Potential XSS attack detected", f"Potential XSS attack detected: {http_data['request']}")
+                                add_value_to_dict(reports, key, f"Potential XSS attack detected: {http_data['request']}")
+        except Exception as e:
+            print(f"Error executing web_traffic_sqli_analisys: {str(e)}")
             
 class Get_recommendations:
     #USED #https://www.una.ac.cr/
     def web_check_tools(self, url):
         key = "web_check"
-        request = requests.get(url)
-        #Instantiate Wappalyzer
-        wappalyzer = Wappalyzer.latest()
-        #Create a WebPage object from the URL
-        webpage = WebPage.new_from_url(request.url)
-        #Analyze the webpage with Wappalyzer
-        analysis = wappalyzer.analyze_with_versions_and_categories(webpage)
-        #Print all the technologies Wappalyzer found
-        for number, (key, value) in enumerate(analysis.items(), start=1):
-            add_value_to_dict(reports, key, f"Tecnology: {number} {key}: {value}")
-            print(f"Tecnology: {number} {key}: ")
-            print(value)
-            print()
+        try:
+            request = requests.get(url)
+            #Instantiate Wappalyzer
+            wappalyzer = Wappalyzer.latest()
+            #Create a WebPage object from the URL
+            webpage = WebPage.new_from_url(request.url)
+            #Analyze the webpage with Wappalyzer
+            analysis = wappalyzer.analyze_with_versions_and_categories(webpage)
+            #Print all the technologies Wappalyzer found
+            for number, (key, value) in enumerate(analysis.items(), start=1):
+                add_value_to_dict(reports, key, f"Tecnology: {number} {key}: {value}")
+                print(f"Tecnology: {number} {key}: ")
+                print(value)
+                print()
+        except Exception as e:
+            print(f"Error executing web_check_tools: {str(e)}")
         
 def main():
     # Create instances of the relevant classes
