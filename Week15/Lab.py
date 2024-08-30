@@ -12,6 +12,7 @@ import time
 from inotify_simple import INotify, flags
 import pyshark
 
+#Variables that will feed the script
 subnet = "192.168.1"
 config_file = "/home/user/.ssh/config"
 website_url = "https://www.una.ac.cr/"
@@ -44,15 +45,20 @@ trusted_ips = [
     "23.228.128.184",
     "52.87.163.242"
 ]
-
+# Combined list of suspicius ip
 suspicious_ip_from_monitor_callback_and_network_log = []
 
+# Will storage the reports during execution
 reports = {}
 
+# Function to append a value to an existing dictionary key or create a new key-value pair
 def add_value_to_dict(my_dict, key, value):
+    # Check if the key already exists in the dictionary
     if key in my_dict:
+        # If it does, append the new value to the list associated with that key
         my_dict[key].append(value)
     else:
+        # If not, create a new key-value pair with a list containing only the given value
         my_dict[key] = [value]
 
 class Generate_alerts:
@@ -72,46 +78,64 @@ class Generate_alerts:
             print("Email sent successfully!")
         except Exception as e:
             print(f"Error sending email: {str(e)}")
-            # You can log the error or take other appropriate actions here
 
 #USED    
 class PrintPDF(FPDF):
     def header(self):
-        self.set_font("Arial", "B", 12)
+        """Set the report title in the header of each page"""
+        # Set font, make it bold and size 12
+        self.set_font("Arial", "B", 12)  
+        # Create a cell with the text centered horizontally
         self.cell(0, 10, "Print Report", 0, 1, "C")
-
+        
     def footer(self):
-        self.set_y(-15)
-        self.set_font("Arial", "I", 8)
+        """Set the page number in the footer of each page""" 
+        # Move cursor to bottom of page (15 mm from bottom)
+        self.set_y(-15)  
+        # Set font for footer text
+        self.set_font("Arial", "I", 8)  
+        # Create a cell with the current page number, centered horizontally
         self.cell(0, 10, "Page %s" % self.page_no(), 0, 0, "C")
-
+        
     def add_print(self, text):
+        """Add some text to the PDF at the default y-position"""
+        # Set font size (12)  
         self.set_font("Arial", size=12)
+        # Create a multi-cell with the provided text, spanning the full width, height 10mm, left-aligned
         self.multi_cell(0, 10, txt=text, align="L")
 
 class Generate_reports:
     #USED
     def generate_report(self):
         try:
+            # Initialize a new PrintPDF object to generate the report
             pdf = PrintPDF()
-            now = datetime.datetime.now()
+            
+            # Get the current date and time as a timestamp string 
+            now = datetime.datetime.now()  
             timestamp = now.strftime("%d_%m_%Y_%H_%M_%S")
-
+            
+            # Keep track of the previous key to detect when it changes
             current_key = None
+            
+            # Iterate over each key-value pair in the reports dictionary
             for key, value_list in reports.items():
                 if key != current_key:
-                    # Key has changed
-                    current_key = key
+                    # If this is a new key, start a new page
+                    current_key = key  
                     pdf.add_page()
-
+                    
                 # Print all values associated with the current key
-                for value in value_list:
+                for value in value_list:   
                     pdf.add_print(value)
-
+                    
+            # Save the PDF report to disk with the timestamp filename 
             pdf.output("Report_" + timestamp + ".pdf")
-
+            
             print("PDF report generated successfully!")
+            
         except Exception as e:
+            # Catch and display any exceptions that occur during generation
             print(f"Error generating PDF report: {str(e)}")
 
 class Network_monitor:
@@ -162,14 +186,19 @@ class Network_monitor:
         live_hosts = []
         try:
             for host in range(1, 255):
+                # Construct the full IP address by appending the current host number
                 target_ip = target_subnet + "." + str(host)
+                # Create an ICMP echo request packet to send a ping
                 packet = IP(dst=target_ip)/ICMP()
+                # Send the ping and wait for a response with a timeout of 1 second
                 response = sr1(packet, timeout=1, verbose=0)
+                # If a response is received, the host is considered live
                 if response is not None:
                     print(f" {target_ip} está vivo.")
                     live_hosts.append(target_ip)
                 else:
                     print(f" {target_ip} está muerto o no responde a pings.")
+            # Return the list of IP addresses of live hosts discovered in the subnet
             return live_hosts
         except Exception as e:
             print(f"Error executing ping_sweep: {str(e)}")
@@ -193,17 +222,30 @@ class Network_monitor:
 
     #USED #sniff(prn=nm.monitor_callback, filter="ip", store=0)           
     def monitor_callback(self, pkt):
-        key = "monitor_callback"
-        generate_alerts = Generate_alerts()
+        key = "monitor_callback"  # Key for storing report in the reports dictionary
+        generate_alerts = Generate_alerts()  # Instance of the alert generation class
+        
         try:
+            # Check if the packet has an IP layer
             if pkt.haslayer(IP):
+                # Iterate over each suspicious IP address
                 for host in suspicious_ips:
+                    # Compare the source IP of the packet with the suspicious IP
                     if pkt[IP].src == host:
+                        # Add the suspicious IP to the log list
                         suspicious_ip_from_monitor_callback_and_network_log.append(host)
-                        print("Suspicious trafic detected from: " + pkt[IP].src)
-                        generate_alerts.send_email_alert(email_To, "Suspicious trafic detected", f"Suspicious trafic detected from: " + pkt[IP].src)
-                        add_value_to_dict(reports, key, "Suspicious trafic detected from: " + pkt[IP].src)
+                        
+                        # Print a message indicating suspicious activity
+                        print("Suspicious traffic detected from: " + pkt[IP].src)
+                        
+                        # Generate and send an email alert
+                        generate_alerts.send_email_alert(email_To, "Suspicious traffic detected", f"Suspicious traffic detected from: {pkt[IP].src}")
+                        
+                        # Add a report entry to the dictionary
+                        add_value_to_dict(reports, key, "Suspicious traffic detected from: " + pkt[IP].src)
+        
         except Exception as e:
+            # Catch and display any exceptions that occur during processing
             print(f"Error executing monitor_callback: {str(e)}")
 
 class Logs_analysis:
@@ -303,42 +345,49 @@ class Vulnerabilities_detection:
             print(f"Error executing linux_behaviour_check: {str(e)}")
 
     #USED #path "/home/user/.ssh/config"
-    def linux_analyze_ssh_config(self, file_path):
-            key = "linux_analyze_ssh_config"
-            try:
-                with open(file_path, "r") as file:
-                    lines = file.readlines()
-
-                weak_passwords = []
-                insecure_ciphers = []
-
-                for line in lines:
-                    if "#" not in line:
-                        key_value_pair = line.strip().split(" ")
-
-                        if len(key_value_pair) == 2:
-                            key, value = key_value_pair
-
-                            if key.lower() == "passwordauthentication":
-                                if value.lower() == "yes":
-                                    weak_passwords.append(line)
-
-                            elif key.lower() == "cipher":
-                                if "3des" in value.lower():
-                                    insecure_ciphers.append(line)
-
-                print("Weak passwords found:")
-                for password in weak_passwords:
-                    print(password, end="")
-                    add_value_to_dict(reports, key, f"Weak passwords found: {password}")
-
-                print("\nInsecure ciphers found:")
-                for cipher in insecure_ciphers:
-                    print(cipher, end="")
-                    add_value_to_dict(reports, key, f"Insecure ciphers found: {cipher}")
-
-            except Exception as e:
-                print(f"Error executing linux_analyze_ssh_config: {str(e)}")
+    def analyze_linux_ssh_config(file_path):
+        # Initialize variables for tracking findings
+        weak_passwords = []
+        insecure_ciphers = []
+        
+        try:
+            with open(file_path, "r") as file:
+                lines = file.readlines()
+                
+            # Iterate over each line in the configuration file
+            for line in lines:
+                # Skip commented lines
+                if "#" not in line:
+                    key_value_pair = line.strip().split(" ")
+                    
+                    # Check if the line contains exactly two values (key and value)
+                    if len(key_value_pair) == 2:
+                        key, value = key_value_pair
+                        
+                        # Check for password authentication setting
+                        if key.lower() == "passwordauthentication":
+                            if value.lower() == "yes":
+                                weak_passwords.append(line)
+                                
+                        # Check for insecure ciphers
+                        elif key.lower() == "cipher":
+                            if "3des" in value.lower():
+                                insecure_ciphers.append(line)
+                        
+            # Log and report weak passwords found
+            print("Weak passwords found:")
+            for password in weak_passwords:
+                print(password, end="")
+                add_value_to_dict(reports, "linux_analyze_ssh_config", f"Weak passwords found: {password}")
+                
+            # Log and report insecure ciphers found
+            print("\nInsecure ciphers found:")  
+            for cipher in insecure_ciphers:
+                print(cipher, end="")
+                add_value_to_dict(reports, "linux_analyze_ssh_config", f"Insecure ciphers found: {cipher}")
+                
+        except Exception as e:
+            print(f"Error executing analyze_linux_ssh_config: {str(e)}")
 
     #USED #192.168.50.1 
     def scan_host(self, host):
@@ -375,6 +424,7 @@ class Attack_prevention:
     def block_ip(self, ip_address):
         try:
             key = "block_ip"
+            # Execute command to block the ip
             os.system("sudo iptables -A INPUT -s {} -j DROP".format(ip_address))
             add_value_to_dict(reports, key, f"{ip_address} has been blocked")
         except Exception as e:
