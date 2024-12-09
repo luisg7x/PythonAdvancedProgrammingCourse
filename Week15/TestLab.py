@@ -1,123 +1,107 @@
 from fpdf import FPDF
 import datetime
-from scapy.all import ICMP, IP, TCP, UDP, sr1, RandShort, sniff
-import requests 
+from scapy.all import ICMP, IP, TCP, UDP, sr1, RandShort, sniff, conf, L3socket
 from Wappalyzer import Wappalyzer, WebPage
-import pyshark
-
-suspicious_ips = [
-    "192.168.1.100",
-    "10.0.0.50",
-    "172.16.31.200",
-    "127.0.0.2", 
-    "23.228.128.186",
-    "52.87.163.243"
-]
-
-sniff_config = {
-    'display_filter': 'tcp port == 80',
-    'packet_count': 100,
-}
-packets = pyshark.LiveCapture(interface='eth0', **sniff_config)
+import sys
 
 
-class Generate_reports:
-    def generate_report():
+reports = {}
+
+def add_value_to_dict(my_dict, key, value):
+    if key in my_dict:
+        my_dict[key].append(value)
+    else:
+        my_dict[key] = [value]
+
+class PrintPDF(FPDF):
+    def header(self):
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 10, "Print Report", 0, 1, "C")
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("Arial", "I", 8)
+        self.cell(0, 10, "Page %s" % self.page_no(), 0, 0, "C")
+
+    def add_print(self, text):
+        self.set_font("Arial", size=12)
+        self.multi_cell(0, 10, txt=text, align="L")
+
+class Generate_reportds:
+    def generate_report(self):
+        pdf = PrintPDF()
         now = datetime.datetime.now()
-        timestamp = now.strftime("%d_%m_%Y_%H")
-        
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size = 15)
-        
-        pdf.cell(200, 10, txt = f"Report generated on {timestamp}", ln = True, align = 'C')
-        
-        pdf.ln(10)
-        
-        for func in dir():
-            if not func.startswith('__'):
-                try:
-                    result = eval(func)()
-                except Exception as e:
-                    result = str(e)
-                    
-                pdf.cell(200, 10, txt = f"Function: {func}\nResult:\n{result}", ln = True, align = 'L')
-                
+        timestamp = now.strftime("%d_%m_%Y_%H_%M_%S")
+
+        current_key = None
+        for key, value_list in reports.items():
+            if key != current_key:
+                # Key has changed
+                current_key = key
+                pdf.add_page()
+
+            # Print all values associated with the current key
+            for value in value_list:
+                pdf.add_print(value)
+
         pdf.output("Report_" + timestamp + ".pdf")
 
-class net:
-    #USED #192.168.1
-    def ping_sweep(self, target_subnet) :
-        live_hosts = []
-        for host in range(1, 255):
-            target_ip = target_subnet + "." + str(host)
-            packet = IP(dst=target_ip)/ICMP()
-            response = sr1(packet, timeout=1, verbose=0)
-            if response is not None:
-                print(f" {target_ip} está vivo.")
-                live_hosts.append(target_ip)
-            else:
-                print(f" {target_ip} está muerto o no responde a pings.")
-        return live_hosts
-        #print(f"\nHosts vivos en la subred {target_subnet} :") 
-        #for host in live_hosts:
-            #print(host)
+        print("PDF report generated successfully!")
+        
 
-    #USED #("192.168.50.1", range(1,1024)
-    def port_scan(self, host, port_range):
-        for dst_port in port_range:
-            src_port = RandShort()
-            packet = IP(dst=host)/TCP(sport=src_port, dport=dst_port, flags="S")
-            response = sr1(packet, timeout=2, verbose=0)
-            if response is not None:
-                if response[TCP].flags == "SA":
-                    print("Port " + str(dst_port) + " is open")
+class Generate_reports:
 
-    #USED #sniff(prn=nm.monitor_callback, filter="ip", store=0)           
-    def monitor_callback(self, pkt):
-        if pkt.haslayer(IP):
-            for host in suspicious_ips:
-                if pkt[IP].src == host:
-                    print("Suspicious trafic detected from: " + pkt[IP].src)
+    def scan_network(self, network):
+        key = "scan_network"
+        """
+        Performs a network scan on the specified IP address or range.
 
-    def web_traffic_sqli_analisys(self, url):
+        Args:
+            network (str): The IP address or range to be scanned.
+        """
 
-            # Sniff packets and analyze them
-        for packet in packets.sniff_continuously():
-            if 'Host' in packet and url in packet['Host']:
-                http_data = packet.get('http')
+        if network is not None:
+            print("Network found")
+            add_value_to_dict(reports, key, f"Network found {key}")
+        else:
+            print("not nentwrok")
+            add_value_to_dict(reports, key, "not nentwrok")
 
-                if http_data:
-                        # Check for SQL injection patterns
-                    sql_injection_patterns = ['UNION', 'SELECT', 'FROM', 'WHERE', 'LIMIT', "admin' --", "admin' /*", "admin'or '1'='1", "admin' or '1'='1' --", "admin' or'1'='1' /*"]
-                    for pattern in sql_injection_patterns:
-                        if pattern.upper() in http_data['data']:
-                            print(f"Potential SQL injection attempt detected: {http_data['request']}")
-                               
-                        # Check for XSS attack patterns
-                    xss_patterns = ['<script>', '</script>', 'javascript:', 'onload=', 'onerror=']
-                    for pattern in xss_patterns:
-                        if pattern in http_data['data']:
-                            print(f"Potential XSS attack detected: {http_data['request']}")
-                                
-          
+        add_value_to_dict(reports, key, "true")
+        return True
+    
+
+    def packet_handler(packet):
+        if 'IP' in packet:
+            src_ip = packet['IP'].src
+            dst_ip = packet['IP'].dst
+
+            # Check for SQL injection patterns
+            sql_injection_patterns = ['UNION', 'SELECT', 'FROM', 'WHERE', 'LIMIT', "admin' --", "admin' /*", "admin'or '1'='1", "admin' or '1'='1' --", "admin' or'1'='1' /*"]
+            for pattern in sql_injection_patterns:
+                if pattern.upper() in str(packet):
+                    print(f"Potential SQL injection attempt detected from {src_ip} to {dst_ip}")
+                      
+            # Check for XSS attack patterns
+            xss_patterns = ['<script>', '</script>', 'javascript:', 'onload=', 'onerror=']
+            for pattern in xss_patterns:
+                if pattern in str(packet):
+                    print(f"Potential XSS attack detected from {src_ip} to {dst_ip}")
+  
+            
 def main():
-    n = net()
+
     g = Generate_reports()
 
-    n.web_traffic_sqli_analisys("https://www.una.ac.cr/")
+    g.scan_network("192.168.50.1/21")
 
-    host_alive = n.ping_sweep("192.168.50")
+    conf.L3socket = L3RawSocket
 
-    # For each host found alive, perform port scans and vulnerability checks
-    for host in host_alive:
-        # Scan ports 1-1024 for open ports
-        n.port_scan(host, range(1, 1024))
-    
-    # Sniff network traffic with an IP filter and store it in memory
-    sniff(prn=n.monitor_callback, filter="ip", store=0) 
+    url = "https://translate.google.com/?sl=en&tl=es&op=translate"
+    sniff(iface='eth0', prn=g.packet_handler, filter=f"host {url}")
 
-    g.generate_report()
+    s = Generate_reportds()
+    s.generate_report()
 
 if __name__ == "__main__":
     main()
